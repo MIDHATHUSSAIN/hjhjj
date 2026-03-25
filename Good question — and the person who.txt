@@ -1,0 +1,116 @@
+Good question — and the person who told you that isn’t completely wrong, but it’s also context-dependent. Let’s break it properly so you can answer this in a viva.
+
+🔥 What your current code is doing
+Application.Current.Dispatcher.Invoke(() =>
+{
+    OnBroadcastReceived?.Invoke(message);
+});
+
+👉 This means:
+
+“Force this code to run on the UI thread synchronously”
+
+❌ Why people say “Dispatcher.Invoke is bad practice”
+🔴 1. It BLOCKS the calling thread
+
+Invoke is synchronous
+
+👉 Your background thread (network listener) will:
+
+STOP
+Wait until UI thread finishes execution
+💥 Problem:
+
+If UI thread is busy (e.g., rendering, heavy work):
+
+👉 Your network thread gets stuck → performance issue
+
+🔴 2. Risk of DEADLOCK (very important for viva)
+
+Scenario:
+
+UI thread is waiting for something
+Background thread calls Dispatcher.Invoke
+UI thread can’t respond
+
+👉 Boom 💥 deadlock
+
+🔴 3. Tight coupling with UI
+
+Your networking layer now depends on:
+
+Application.Current.Dispatcher
+
+👉 That’s bad architecture:
+
+Harder to test
+Not reusable (e.g., console app, service)
+🟡 So is Dispatcher ALWAYS bad?
+
+👉 ❌ No
+👉 ✅ Only Invoke is problematic
+
+✅ Better Approaches
+🟢 1. Use Dispatcher.BeginInvoke (quick fix)
+Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+{
+    OnBroadcastReceived?.Invoke(message);
+}));
+✅ Why better:
+Non-blocking
+Doesn’t freeze your listener thread
+🟢 2. BEST PRACTICE → Let UI handle threading (🔥 recommended)
+
+👉 Remove Dispatcher from your networking layer completely
+
+✔ Change this:
+OnBroadcastReceived?.Invoke(message);
+
+👉 No Dispatcher here ❌
+
+✔ Handle it in UI (ViewModel / View)
+MakingConnectionToServer.OnBroadcastReceived += async (msg) =>
+{
+    if (msg == "REFRESH_DATA")
+    {
+        await Application.Current.Dispatcher.InvokeAsync(async () =>
+        {
+            await CacheData.LoadingInitialData();
+        });
+    }
+};
+🔥 Why this is BEST
+Benefit	Reason
+✅ Clean architecture	Networking layer doesn't know about UI
+✅ No blocking	Uses async dispatcher
+✅ More flexible	Works in any app type
+✅ Easier testing	No UI dependency
+🧠 Viva-Level Answer
+❓ Why is Dispatcher.Invoke considered bad?
+
+Because it blocks the calling thread, can cause deadlocks, and tightly couples background logic with the UI thread.
+
+❓ What is the better approach?
+
+Use Dispatcher.BeginInvoke for non-blocking calls, or preferably handle UI thread switching in the UI layer instead of the service layer.
+
+🔥 Final Recommendation for YOUR code
+✔ Change StartListening() to:
+if (message == "REFRESH_DATA")
+{
+    OnBroadcastReceived?.Invoke(message);
+}
+✔ Handle UI safely here:
+MakingConnectionToServer.OnBroadcastReceived += async (msg) =>
+{
+    if (msg == "REFRESH_DATA")
+    {
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            return CacheData.LoadingInitialData();
+        });
+    }
+};
+💡 One-liner to remember
+
+“Never mix UI logic inside networking/service layer — always let UI handle thread marshaling.”
