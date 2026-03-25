@@ -1,0 +1,260 @@
+Good question — this is a very important pattern when working with collections.
+
+🔁 Why backward loop is used here?
+
+You wrote:
+
+for (int i = _connectedClients.Count - 1; i >= 0; i--)
+
+This is called a backward iteration.
+
+👉 The reason is:
+You are removing items from the list while looping:
+
+_connectedClients.RemoveAt(i);
+⚠️ What goes wrong with forward loop?
+
+If you do a normal loop:
+
+for (int i = 0; i < _connectedClients.Count; i++)
+❌ Problem: Index shifting
+
+Example:
+
+List = [A, B, C, D]
+Index   0  1  2  3
+
+Now suppose you remove B at index 1.
+
+After removal:
+
+List = [A, C, D]
+Index   0  1  2
+
+But your loop does i++ → i = 2
+
+👉 Now you skip C (which moved to index 1)
+
+So:
+
+Some clients won’t be checked
+Some dead clients may remain in list
+Bugs become inconsistent and hard to trace
+✅ Why backward loop fixes this
+
+Backward loop:
+
+i = Count - 1 → 3 → 2 → 1 → 0
+
+If you remove item:
+
+It only affects elements after it
+But you already processed those
+
+So no skipping happens ✔️
+
+🧠 In your case (very important)
+
+Inside Broadcast():
+
+if (client.Connected)
+{
+    stream.Write(buffer, 0, buffer.Length);
+}
+else
+{
+    _connectedClients.RemoveAt(i);
+}
+
+and also:
+
+catch
+{
+    _connectedClients.RemoveAt(i);
+}
+
+👉 You are removing:
+
+disconnected clients
+broken connections
+
+If you used forward loop:
+
+Some dead clients stay forever
+Memory leak risk
+Broadcast becomes unreliable
+🚨 Bonus: Why not use foreach?
+
+This will crash:
+
+foreach (var client in _connectedClients)
+{
+    _connectedClients.Remove(client); // ❌ Exception
+}
+
+👉 Because:
+
+"Collection was modified; enumeration operation may not execute."
+
+✅ Alternative approaches (advanced)
+
+If you want cleaner code:
+
+Option 1: Use RemoveAll
+_connectedClients.RemoveAll(c => !c.Connected);
+
+But ⚠️ you can’t easily send data inside this.
+
+Option 2: Create a copy (less efficient)
+foreach (var client in _connectedClients.ToList())
+🧾 Final takeaway
+
+✔ Use backward loop when:
+
+Removing items inside loop
+
+❌ Avoid forward loop when:
+
+Modifying same list
+
+If you want, I can show you a thread-safe + scalable version of Broadcast (production-level) using ConcurrentBag or Sockets async 👍
+
+I didn't understand please go deeper
+
+Alright — let’s slow this down and really visualize what’s happening step by step. This is one of those things that clicks once you see it.
+
+🧠 Core idea (in one line)
+
+When you remove items from a list while looping forward, the list shifts and you accidentally skip elements.
+
+🔍 Let’s simulate your exact case
+
+Imagine your client list:
+
+Index:   0    1    2    3
+List:   [A,   B,   C,   D]
+❌ Case 1: Forward loop (BUG)
+for (int i = 0; i < list.Count; i++)
+👉 Step-by-step execution
+Step 1:
+i = 0 → A → OK
+Step 2:
+i = 1 → B → DEAD → REMOVE IT
+
+After removing B:
+
+List becomes: [A, C, D]
+Index now:     0  1  2
+Step 3:
+
+Loop does i++
+
+i = 2
+
+Now:
+
+i = 2 → D
+
+⚠️ WAIT — what happened to C?
+
+👉 It moved from index 2 → index 1
+👉 But your loop skipped index 1
+
+❌ Result:
+C was never checked
+Dead clients can remain
+Bugs appear randomly
+✅ Case 2: Backward loop (CORRECT)
+for (int i = list.Count - 1; i >= 0; i--)
+
+Start:
+
+Index:   0    1    2    3
+List:   [A,   B,   C,   D]
+Step 1:
+i = 3 → D → OK
+Step 2:
+i = 2 → C → OK
+Step 3:
+i = 1 → B → DEAD → REMOVE
+
+After removal:
+
+List becomes: [A, C, D]
+Index now:     0  1  2
+Step 4:
+i = 0 → A → OK
+✅ Result:
+No skipping
+All elements checked
+Safe removal
+🔥 Why backward works (key insight)
+
+When you remove:
+
+👉 Forward loop problem:
+Removal affects future indexes
+You haven’t processed them yet → ❌ danger
+👉 Backward loop:
+Removal affects already processed elements
+You don’t care anymore → ✅ safe
+🧩 Relating to YOUR code
+
+In your Broadcast():
+
+_connectedClients.RemoveAt(i);
+
+You remove:
+
+disconnected clients
+failed connections
+If you used forward loop:
+for (int i = 0; i < _connectedClients.Count; i++)
+
+Then:
+
+Some dead clients remain
+Broadcast may try sending to broken sockets later
+You get random exceptions
+⚠️ Real-world effect (important for you)
+
+Since you're building a server:
+
+Without backward loop:
+
+Memory leaks (dead clients stay)
+Unstable broadcast
+Unexpected crashes
+🧠 Simple rule to remember
+
+👉 If you are removing items while looping:
+
+Loop Type	Safe?
+Forward loop	❌ No
+Backward loop	✅ Yes
+foreach	❌ Exception
+💡 Easy analogy
+
+Think of people standing in a line:
+
+[A, B, C, D]
+
+You’re checking from left → right.
+
+If you remove B:
+
+Everyone shifts left
+You accidentally skip C
+
+But if you check from right → left:
+
+Removing someone doesn’t affect people you haven’t checked yet
+👍 Final takeaway
+
+Your comment in code is 100% correct:
+
+// We iterate backwards so if a client is dead, we can remove it safely
+
+If you want next level understanding, I can show:
+✅ Visual animation style explanation
+✅ OR how this behaves in multithreading (very important in your server)
